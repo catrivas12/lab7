@@ -1,0 +1,157 @@
+---
+title: "LAB 7"
+output: html_document
+date: "2024-04-12"
+---
+
+```{r}
+
+load("~/Desktop/Household_Pulse_data_ph4c2 (1).RData")
+summary (Household_Pulse_data)
+summary(Household_Pulse_data$ANXIOUS)
+```
+
+```{r}
+#fct
+
+household_pulse_anxiety <- fct_recode(Household_Pulse_data$ANXIOUS,
+                                      "0"= "no anxiety over past 2 wks",
+                                      "1"= "several days anxiety over past 2 wks",
+                                      "1" = "more than half the days anxiety over past 2 wks",
+                                      "1" = "nearly every day anxiety")
+
+household_pulse_anxiety <- as.numeric(levels(Household_Pulse_data$ANXIOUS))[Household_Pulse_data$ANXIOUS]
+
+clean_anxious <- (Household_Pulse_data$ANXIOUS != "NA")
+new_anxious <- subset(Household_Pulse_data,clean_anxious )
+
+
+model_1 <- lm(ANXIOUS ~ WORRY* (MS + EEDUC), data= new_anxious)
+summary(model_1)
+
+
+summary(Household_Pulse_data$WORRY)
+household_pulse_worry <- fct_recode(Household_Pulse_data$WORRY,
+                                      "0"= "no anxiety over past 2 wks",
+                                      "1"= "several days worried over past 2 wks",
+                                      "1" = "more than half the days worried over past 2 wks",
+                                      "1" = "nearly every day worry")
+
+
+household_pulse_worry <- as.numeric(levels(Household_Pulse_data$WORRY))[Household_Pulse_data$WORRY]
+
+
+clean_worry <- (Household_Pulse_data$WORRY != "NA")
+new_worry <- subset(Household_Pulse_data,clean_worry )
+
+
+p_avg_byworry <- ggplot(new_anxious, aes(x = WORRY, fill = ANXIOUS))
+p_avg_byworry + geom_bar(position = "fill") + 
+  scale_fill_viridis_d(option = "mako", begin = 0.3, end = 0.85)+
+  facet_grid(~MS)
+
+
+
+
+model_1 <- lm(ANXIOUS ~ WORRY* (MS + EEDUC), data= new_anxious)
+model_2 <- lm(WORRY ~ INTEREST + SUPPORT1, data= new_anxious)
+stargazer(model_1,model_2, type = "html")
+
+
+logit_out1 <- glm(ANXIOUS ~ WORRY* (MS + EEDUC), data= new_anxious, family = binomial)
+stargazer(model_1,model_2, type = "html")
+
+pred_vals <- predict(logit_out1,new_anxious , type = "response")
+pred_model_logit1 <- (pred_vals > 0.18) # because 0.5 doesn't get any at all; set to mean value
+table(pred = pred_model_logit1, true = household_pulse_anxiety)
+
+```
+
+```{r}
+select1 <- (Household_Pulse_data$MHLTH_NEED != "NA")
+d_kids <- subset(Household_Pulse_data,select1)
+
+#The question about need for treatment could be answered saying that all the kids need it, or some but not all. I'll treat those as the same -- at least one child in the household needed treatment.
+d_kids$MentHealthKids <- as.numeric( 
+  (d_kids$MHLTH_NEED == "all children need mental health treatment") |
+  (d_kids$MHLTH_NEED == "some but not all children") )
+
+
+#Then some basic stats. Look at what fraction of kids need mental health treatment, and see if there are differences by race. 
+ddply(d_kids,.(RRACE), summarize, avg = mean(MentHealthKids))
+
+#But I'll also show a shortcut with OLS. If you remove the intercept then it puts in all the factor levels,
+ols_out1 <- lm(MentHealthKids ~ -1 + RRACE, data = d_kids)
+stargazer(ols_out1, type = "html")
+
+#you can verify that those give the same answers. And take another look to understand how to interpret the results, now with the intercept
+ols_out1a <- lm(MentHealthKids ~ RRACE, data = d_kids)
+stargazer(ols_out1a, type = "html")
+
+#Why use OLS, if the interpretation is tougher? Because it provides easy hypothesis tests. For the version without an intercept, every coefficient got stars because the hypothesis test was, are they different from zero -- no race group has zero mental health needs. But the version with intercept gives coefficients that are the difference from a baseline and then hypothesis tests for whether that difference is not zero. Which is a more interesting comparison.
+
+#*And, if you're worried about privileging whiteness by having that as the base category, you can reorder the factor levels, something like `fct_relevel(d_kids$RRACE,"Black")` will move "Black" to be the base category. R just omits the first factor level.*
+
+fct_relevel(d_kids$RRACE,"Black")
+
+p_avg_byrace <- ggplot(d_kids, aes(x = RRACE, fill = MHLTH_NEED))
+p_avg_byrace + geom_bar(position = "fill") + 
+  scale_fill_viridis_d(option = "mako", begin = 0.3, end = 0.85)
+
+
+
+
+#Let's pause for some notes on interpretation. This shows that Black and Asian parents are less likely to respond that their kids need mental health treatment. Do you think that's because Black and Asian children have better mental health? Or do you think that reflects cultural differences about what parents believe their kids need? Both? What else do you think can explain those differences? So often, stats doesn't deliver simple answers but rather prompts the researcher to think, "huh, I wonder why that is?" That's the basis of so much good research!
+
+#These are all complicated. Note that on average, Asian parents report their kids are a lot less likely to need mental health treatment, `r prettyNum(ols_out2a$coefficients[3], digits = 3)`, as are Hispanic parents, `r prettyNum(ols_out2a$coefficients[5], digits = 3)`. So what about parents who are both Asian and Hispanic? Now they've reversed sign, `r prettyNum(ols_out2a$coefficients[7], digits = 3)` nearly back to net zero difference, `r prettyNum((ols_out2a$coefficients[3] + ols_out2a$coefficients[5] + ols_out2a$coefficients[7]), digits = 3)`. Intersectionality is important!
+
+
+p_avg_byrace <- ggplot(d_kids, aes(x = RRACE, fill = MHLTH_NEED))
+p_avg_byrace + geom_bar(position = "fill") + 
+  scale_fill_viridis_d(option = "mako", begin = 0.3, end = 0.85) + 
+  facet_grid(~RHISPANIC)
+
+
+#Let's add in some other factors to see other correlates with assessments of kids' mental health treatment needs.
+ols_out3 <- lm(MentHealthKids ~ RHISPANIC*RRACE*EEDUC*MS + PRIVHLTH, data = d_kids)
+stargazer(ols_out3, type = "html")
+
+#Some of these intersections get NA result since there are so few people. Maybe throttle back on some.
+ols_out3a <- lm(MentHealthKids ~ RHISPANIC*RRACE*EEDUC + MS + PRIVHLTH, data = d_kids)
+
+
+#Some of the coefficient estimates are gigantic (near one in absolute value) but with large standard errors, again this is a result of so many subdivisions. Still, ANOVA shows it's useful to add so many.
+anova(ols_out2a,ols_out3a)
+
+
+#I find it a bit surprising -- but hopeful! -- that having private health insurance or not has no impact, although answering "NA" does. Perhaps interpret that as, people who don't really understand their insurance options might have trouble.
+The Household Pulse data also has data on whether the person responding is anxious, worried, depressed, gets social and emotional support, and how often they talk with their community (including religious organizations and others). We can look at how that correlates with kids mental health. Also we add the region of the country, see if it's different in the south.
+
+ols_out4 <- lm(MentHealthKids ~ RHISPANIC*RRACE*EEDUC + MS + PRIVHLTH + 
+                REGION + ANXIOUS + WORRY + INTEREST + 
+                SOCIAL1 + SOCIAL2 + 
+                SUPPORT1 + SUPPORT2 + SUPPORT3 + SUPPORT4 + SUPPORT1EXP, data = d_kids)
+stargazer(ols_out3a,ols_out4, type = "html")
+
+
+
+
+logit_out1 <- glm(MentHealthKids ~ RHISPANIC*RRACE*EEDUC + MS + PRIVHLTH + 
+                REGION + ANXIOUS + WORRY + INTEREST + 
+                SOCIAL1 + SOCIAL2 + 
+                SUPPORT1 + SUPPORT2 + SUPPORT3 + SUPPORT4 + SUPPORT1EXP, data = d_kids,
+                family = binomial)
+stargazer(ols_out4,logit_out1, type = "html")
+
+
+
+
+
+pred_vals <- predict(logit_out1, d_kids, type = "response")
+pred_model_logit1 <- (pred_vals > 0.18) # because 0.5 doesn't get any at all; set to mean value
+table(pred = pred_model_logit1, true = d_kids$MentHealthKids)
+
+
+```
+
+
